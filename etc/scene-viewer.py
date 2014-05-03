@@ -26,9 +26,10 @@ except:
 import math
 from mathutils import Matrix
 from functools import cmp_to_key
-    
+
 bl_info = {"name": "GamePlay 3D Scene Viewer", "category": "User"}
 
+bpy.types.Scene.encoder_xml = bpy.props.BoolProperty(name="Generate XML",default=False)
 bpy.types.Scene.rotatex = bpy.props.BoolProperty(name="Rotate X-90",default=False)
 bpy.types.Scene.encoder_group = bpy.props.BoolProperty(name="Group Animations",default=False)
 bpy.types.Scene.encoder_genmat = bpy.props.BoolProperty(name="Generate Materials",default=True)
@@ -145,6 +146,13 @@ class SceneView(bpy.types.Operator):
             return True
     
     def execute(self, context):
+        
+        # set mode to 'OBJECT'
+        for obj in bpy.context.scene.objects:
+          if obj.type == 'MESH':
+            bpy.context.scene.objects.active = obj
+            bpy.ops.object.mode_set(mode='OBJECT')
+        
         if bpy.context.scene.rotatex:
            # Rotate -90 around the X-axis
            rotateScene(-math.pi / 2.0)
@@ -153,7 +161,7 @@ class SceneView(bpy.types.Operator):
         else:
            axisForward='Z'
            axisUp='Y'
-	
+    
         sve = bpy.context.scene.viewer_path
         svp = bpy.context.scene.game_path
         resdir = ''
@@ -205,20 +213,48 @@ class SceneView(bpy.types.Operator):
         if bpy.context.scene.encoder_genmat:
             args.append("-m")
         args.append(sfp+".fbx")
+        if bpy.context.scene.encoder_xml:
+                args.insert(1, "-t")
         subprocess.call(args)
         for img in bpy.data.images.keys():    
-            if bpy.data.images[img].source=='FILE' and os.path.dirname(bpy.data.images[img].filepath) != resdir:
+            if bpy.data.images[img].source=='FILE' and os.path.dirname(bpy.data.images[img].filepath) != resdir and os.path.exists(bpy.data.images[img].filepath):
                 shutil.copy(bpy.data.images[img].filepath,resdir)
-
-        if macApp:
-            subprocess.Popen(['/usr/bin/open',sve,'--args',barename],cwd=svp)
+        
+        if not bpy.context.scene.encoder_xml:
+                # Execute scene-viewer
+                if macApp:
+                    subprocess.Popen(['/usr/bin/open',sve,'--args',barename],cwd=svp)
+                else:
+                    subprocess.Popen([sve,barename],cwd=svp)
         else:
-            subprocess.Popen([sve,barename],cwd=svp)
-
+                # Execute the platform's text editor
+                pltfm = bpy.app.build_platform.decode('utf-8').lower()
+                runcmd = ''
+                if   pltfm.startswith('win'):
+                        # runcmd = 'start "" "'+sfp+'.xml"'  # too slow on xp32
+                        runcmd = 'explorer "'+sfp+'.xml"'
+                        os.system('echo scene-viewer - Executing: '+runcmd)
+                elif pltfm.startswith('darwin'):  # mac
+                        # runcmd = '/usr/bin/open -a TextEdit "'+sfp+'.xml"'  # Use an app (TextEdit)
+                        runcmd = '/usr/bin/open -t "'+sfp+'.xml"'  # Use default text editor
+                        os.system('echo scene-viewer - Executing: '+runcmd)
+                elif pltfm.startswith('linux'):
+                        # runcmd = '( /usr/bin/gedit "'+sfp+'.xml" ) &'  # Use a custom command
+                        #
+                        # You may substitute the MYPREFERRED string with your graphical text editor (for example: MYPREFERRED="chromium-browser").
+                        # Please don't specify a text editor with no X window interface (like Vim), or a silent process will be open in background.
+                        runcmd = '''( MYPREFERRED=""; ALREADY=0 ; runcmd() { if [ $ALREADY = 0 -a ! -z "${2}" -a ! -z "`which ${1}`" ]; then
+                        echo "scene-viewer - Executing:" ${1} ${2} ; "${1}" "${2}" ; ALREADY=1 ; fi } ; F="'''+sfp+'''.xml";
+                        runcmd "${MYPREFERRED}" "${F}" ; runcmd "gedit" "${F}" ; runcmd "kate" "${F}" ; runcmd "leafpad" "${F}" ; ) &'''
+                os.system(runcmd)  # If you want to disable the text editor, please comment this line with a '#' character.
+        
         if bpy.context.scene.rotatex:
            # Rotate 90 around the X-axis
            rotateScene(math.pi / 2.0)
-			
+           
+           # or use undo, so it rotates scene back (and get instances back)
+           #bpy.ops.ed.undo()
+           
         return {"FINISHED"}
 
 class GameplayPanel(bpy.types.Panel):
@@ -235,6 +271,7 @@ class GameplayPanel(bpy.types.Panel):
         layout.prop(context.scene, "encoder_genmat")
         layout.prop(context.scene, "encoder_group")
         layout.prop(context.scene, "rotatex")
+        layout.prop(context.scene, "encoder_xml")
         layout.operator("scene.gameplayview")
 
 def register():
