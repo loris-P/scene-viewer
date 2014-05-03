@@ -203,6 +203,7 @@ class SceneView(bpy.types.Operator):
                                  path_mode='AUTO', 
                                  batch_mode='OFF', 
                                  use_batch_own_dir=True, 
+                                 use_tspace=True, 
                                  use_metadata=True)
         args = [enc]
         if bpy.context.scene.encoder_group:
